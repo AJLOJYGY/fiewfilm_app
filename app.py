@@ -333,10 +333,24 @@ def edit_profile():
     user = get_current_user()
 
     if request.method == 'POST':
-        bio = request.form.get('bio', '')
+        username = request.form.get('username', '').strip()
+        bio = request.form.get('bio', '').strip()
         profile_pic = request.files.get('profile_pic')
 
-        update_data = {'bio': bio}
+        if not username:
+            flash('Username is required.', 'error')
+            return redirect(url_for('edit_profile'))
+
+        # Cek kalau username diganti dan sudah dipakai user lain
+        if username != user['username']:
+            if users.find_one({'username': username}):
+                flash('Username already taken.', 'error')
+                return redirect(url_for('edit_profile'))
+
+        update_data = {
+            'username': username,
+            'bio': bio
+        }
 
         if profile_pic and profile_pic.filename != '':
             filename = secure_filename(profile_pic.filename)
@@ -345,10 +359,56 @@ def edit_profile():
 
         users.update_one({'_id': user['_id']}, {'$set': update_data})
         flash('Profile updated successfully!', 'success')
-        return redirect(url_for('user_profile', username=user['username']))
-
+        return redirect(url_for('user_profile', username=username))
 
     return render_template('auth/edit_profile.html', user=user)
+
+
+
+# Admin: Edit Article
+@app.route('/admin/articles/edit/<article_id>', methods=['GET', 'POST'])
+def admin_edit_article(article_id):
+    if not is_admin():
+        return redirect(url_for('index'))
+
+    article = articles.find_one({'_id': ObjectId(article_id)})
+    if not article:
+        flash('Article not found', 'error')
+        return redirect(url_for('admin_articles'))
+
+    if request.method == 'POST':
+        title = request.form.get('title')
+        content = request.form.get('content')
+        tags = [t.strip() for t in request.form.get('tags', '').split(',')]
+        featured_image = request.files.get('featured_image')
+
+        update_data = {
+            'title': title,
+            'content': content,
+            'tags': tags
+        }
+
+        if featured_image and featured_image.filename:
+            filename = secure_filename(featured_image.filename)
+            featured_image.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            update_data['featured_image'] = filename
+
+        articles.update_one({'_id': ObjectId(article_id)}, {'$set': update_data})
+        flash('Article updated!', 'success')
+        return redirect(url_for('article_detail', article_id=article_id))
+
+    return render_template('admin/edit_article.html', article=article, user=get_current_user())
+
+
+# Admin: Delete Article
+@app.route('/admin/articles/delete/<article_id>', methods=['POST'])
+def admin_delete_article(article_id):
+    if not is_admin():
+        return redirect(url_for('index'))
+
+    articles.delete_one({'_id': ObjectId(article_id)})
+    flash('Article deleted successfully!', 'success')
+    return redirect(url_for('admin_articles'))
 
 
 @app.route('/film/<film_id>/add-to-watchlist', methods=['POST'])
